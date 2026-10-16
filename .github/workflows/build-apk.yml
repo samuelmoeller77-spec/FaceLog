@@ -28,11 +28,13 @@ jobs:
           node-version: '22'
 
       - name: Android SDK einrichten
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        uses: android-actions/setup-android@v3
 
-      - name: Projekt entpacken
+      - name: Android SDK Pakete installieren
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: ZIP entpacken
         run: |
           mkdir -p source
           unzip -o FaceLog-Android-Project.zip -d source
@@ -43,11 +45,10 @@ jobs:
         run: |
           DIR="$(find source -name package.json -not -path '*/node_modules/*' -printf '%h\n' | head -n 1)"
           if [ -z "$DIR" ]; then
-            echo "Kein package.json gefunden. ZIP-Inhalt prüfen."
+            echo "Fehler: package.json nicht gefunden"
             exit 1
           fi
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projektordner: $DIR"
 
       - name: Abhängigkeiten installieren
         working-directory: ${{ steps.projekt.outputs.dir }}
@@ -61,7 +62,7 @@ jobs:
         working-directory: ${{ steps.projekt.outputs.dir }}
         run: npx cap add android
 
-      - name: Android-Projekt synchronisieren
+      - name: Android synchronisieren
         working-directory: ${{ steps.projekt.outputs.dir }}
         run: npx cap sync android
 
@@ -71,7 +72,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: APK bereitstellen
+      - name: APK herunterladen bereitstellen
         uses: actions/upload-artifact@v4
         with:
           name: FaceLog-APK
