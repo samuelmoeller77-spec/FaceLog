@@ -6,46 +6,75 @@ on:
   push:
     paths:
       - 'FaceLog-Android-Project.zip'
+      - '.github/workflows/build-apk.yml'
 
 jobs:
-  build:
+  bauen:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Repository herunterladen
+        uses: actions/checkout@v4
+
+      - name: Java installieren
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
-
-      - uses: actions/setup-node@v4
+      - name: Node.js installieren
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Extract project
-        run: unzip FaceLog-Android-Project.zip -d source
+      - name: Android SDK einrichten
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Install dependencies
-        working-directory: source/FaceLog
-        run: npm ci
+      - name: Projekt entpacken
+        run: |
+          mkdir -p source
+          unzip -o FaceLog-Android-Project.zip -d source
+          find source -name package.json -print
 
-      - name: Build web app
-        working-directory: source/FaceLog
+      - name: Projektordner finden
+        id: projekt
+        run: |
+          DIR="$(find source -name package.json -not -path '*/node_modules/*' -printf '%h\n' | head -n 1)"
+          if [ -z "$DIR" ]; then
+            echo "Kein package.json gefunden. ZIP-Inhalt prüfen."
+            exit 1
+          fi
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Projektordner: $DIR"
+
+      - name: Abhängigkeiten installieren
+        working-directory: ${{ steps.projekt.outputs.dir }}
+        run: npm install
+
+      - name: Web-App bauen
+        working-directory: ${{ steps.projekt.outputs.dir }}
         run: npm run build
 
-      - name: Create Android project
-        working-directory: source/FaceLog
+      - name: Capacitor Android hinzufügen
+        working-directory: ${{ steps.projekt.outputs.dir }}
         run: npx cap add android
 
-      - name: Build APK
-        working-directory: source/FaceLog/android
+      - name: Android-Projekt synchronisieren
+        working-directory: ${{ steps.projekt.outputs.dir }}
+        run: npx cap sync android
+
+      - name: APK bauen
+        working-directory: ${{ steps.projekt.outputs.dir }}/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - uses: actions/upload-artifact@v4
+      - name: APK bereitstellen
+        uses: actions/upload-artifact@v4
         with:
           name: FaceLog-APK
-          path: source/FaceLog/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.projekt.outputs.dir }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
